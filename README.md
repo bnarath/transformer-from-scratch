@@ -24,7 +24,7 @@ The dataset used for training comes from the [ai4bharat/samanantar](https://hugg
 
 
 ![transformer_architecture](fig/transformer_architecture.png)
-*Figure 1: Image courtesy of [Original Transformer Paper](http://example.com).*   
+*Figure 1: Image courtesy of [Original Transformer Paper](https://arxiv.org/pdf/1706.03762).*  
 
 ## Citation
 
