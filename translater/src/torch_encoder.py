@@ -1,4 +1,4 @@
-"""Torch transformer architecture"""
+"""Torch encoder architecture"""
 
 import torch
 import torch.nn as nn
@@ -22,8 +22,12 @@ class Encoder(nn.Module):
             ]
         )  # Note: Sequential APPLIES the layers in order unlike modulelist layer
 
-    def forward(self, x):
-        return self.layers(x)
+    def forward(self, x, mask):
+        # x: 64, 300, 512
+        # Sequential layer takes only one input, hence to use mask, we need to iterate
+        for layer in self.layers:
+            x = layer(x, mask)
+        return x  # 64, 300, 512
 
 
 class Encoder_Block(nn.Module):
@@ -57,7 +61,7 @@ class Encoder_Block(nn.Module):
 
 def scaled_dot_product_attention(q, k, v, mask=None):
     # q,k,v: 64, 8, 300, 64
-    # mask: 64, 300, 300
+    # mask: 64, 1, 300, 300
     d_k = q.size()[-1]  # 64
     scaled = torch.matmul(q, k.transpose(-1, -2)) / d_k**0.5  # 64, 8, 300, 300
     if mask is not None:
@@ -145,6 +149,7 @@ if __name__ == "__main__":
     )
     mask = torch.ones(
         Train.batch_size.value,
+        1,
         HuggingFaceData.max_length.value,
         HuggingFaceData.max_length.value,
     )
@@ -155,4 +160,4 @@ if __name__ == "__main__":
         hidden_dim=Encoder_Enum.hidden_dim.value,
         drop_prob=Encoder_Enum.drop_prob.value,
     )
-    out = encoder(x)
+    out = encoder(x, mask)
