@@ -30,5 +30,21 @@ class Train(Enum):
     seed = 1
 
 
+class Encoder_Enum(Enum):
+    num_layers = 4
+    d_model = (
+        512  # the dimensionality of the model's hidden states or embeddings, q, k, v
+    )
+    # q_k_v_dim = 64 is deduced as d_modelnum_attention_heads as 8*64 = 512
+    num_attention_heads = 8  # For self attention in both Encoder
+    drop_prob = 0.1  # drop probability (10% dropout), happens after every layer norm and inside FFW
+    hidden_dim = 2048  # dim of FFW nw's hidden layer
+
+
+class Decoder(Enum):
+    # num_layers = 4
+    pass
+
+
 class Training:
     framework = "torch"
