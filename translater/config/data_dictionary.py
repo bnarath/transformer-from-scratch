@@ -31,7 +31,7 @@ class Train(Enum):
 
 
 class Encoder_Enum(Enum):
-    num_layers = 4
+    num_layers = 5
     d_model = (
         512  # the dimensionality of the model's hidden states or embeddings, q, k, v
     )
@@ -41,9 +41,12 @@ class Encoder_Enum(Enum):
     hidden_dim = 2048  # dim of FFW nw's hidden layer
 
 
-class Decoder(Enum):
-    # num_layers = 4
-    pass
+class Decoder_Enum(Enum):
+    num_layers = 5
+    d_model = 512
+    num_attention_heads = 8
+    drop_prob = 0.1
+    hidden_dim = 2048
 
 
 class Training:
