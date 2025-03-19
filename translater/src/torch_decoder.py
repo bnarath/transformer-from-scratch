@@ -4,33 +4,61 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.preprocess import SentenceEmbedding
 from config.data_dictionary import Decoder_Enum, Train, HuggingFaceData
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_layers, d_model, num_attention_heads, hidden_dim, drop_prob):
+    def __init__(
+        self,
+        num_layers,
+        d_model,
+        num_attention_heads,
+        hidden_dim,
+        drop_prob,
+        max_seq_length,
+        vocab_to_index,
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+    ):
         super().__init__()
         self.num_layers = num_layers
         self.d_model = d_model
         self.num_attention_heads = num_attention_heads
         self.hidden_dim = hidden_dim
         self.drop_prob = drop_prob
+        self.max_seq_length = max_seq_length
+        self.vocab_to_index = vocab_to_index
+        self.START_TOKEN = START_TOKEN
+        self.END_TOKEN = END_TOKEN
+        self.PADDING_TOKEN = PADDING_TOKEN
         self.layers = nn.Sequential(
             *[
                 Decoder_Block(d_model, num_attention_heads, hidden_dim, drop_prob)
                 for _ in range(self.num_layers)
             ]
         )  # Note: Sequential APPLIES the layers in order unlike modulelist layer
+        self.sentence_embedding = SentenceEmbedding(
+            self.max_seq_length,
+            self.d_model,
+            self.vocab_to_index,
+            self.drop_prob,
+            self.START_TOKEN,
+            self.END_TOKEN,
+            self.PADDING_TOKEN,
+        )
 
-    def forward(self, x, y, cross_mask, no_lookahead_mask):
+    def forward(self, x, y, cross_mask, self_mask, start_token=True, end_token=True):
         # x: 64, 300, 512
-        # y: 64, 300, 512
-        # cross_mask: 64, 300, 300
-        # no_lookahead_mask: 300, 300
+        # y: (64, )
+        # cross_mask: 64, 1, 300, 300
+        # self_mask: 64, 1, 300, 300
 
         # Sequential layer takes only one input, hence to use x, y and masks, we need to iterate
+        y = self.sentence_embedding(y, start_token, end_token)  #
         for layer in self.layers:
-            y = layer(x, y, cross_mask, no_lookahead_mask)  # 64, 300, 512
+            y = layer(x, y, cross_mask, self_mask)  # 64, 300, 512
 
         return y  # 64, 300, 512
 
@@ -55,10 +83,10 @@ class Decoder_Block(nn.Module):
         self.dropout3 = nn.Dropout(self.drop_prob)
         self.feed_forward = FeedForward(self.d_model, self.hidden_dim, self.drop_prob)
 
-    def forward(self, x, y, cross_mask, no_lookahead_mask):
-        # x: 64, 300, 512, y: 64, 300, 512, cross_mask: 64, 300, 300, no_lookahead_mask: 300, 300
+    def forward(self, x, y, cross_mask, self_mask):
+        # x: 64, 300, 512, y: 64, 300, 512, cross_mask: 64, 1, 300, 300, self_mask: 64, 1, 300, 300
         residual_y = y
-        y = self.self_attention(y, mask=no_lookahead_mask)  # 64, 300, 512
+        y = self.self_attention(y, mask=self_mask)  # 64, 300, 512
         y = self.dropout1(y)  #  64, 300, 512
         y = self.norm1(y + residual_y)  # 64, 300, 512
 
@@ -132,7 +160,7 @@ class MultiHeadCrossAttention(nn.Module):
     def forward(self, x, y, mask):
         # x: 64, 300, 512
         # y: 64, 300, 512
-        # mask: 300, 300
+        # mask: 64, 1, 300, 300
         batch_size, seq_length, d_model = x.size()
         q = self.q_layer(x)  # 64, 300, 512
         kv = self.kv_layer(y)  # 64, 300, 1024
@@ -194,28 +222,112 @@ class FeedForward(nn.Module):
 
 
 if __name__ == "__main__":
+
+    # Test
+
+    import pickle
+    from config.data_dictionary import ROOT
+    from pathlib import Path
+
+    START_TOKEN = "<START>"
+    END_TOKEN = "<END>"
+    PADDING_TOKEN = "<PAD>"
+
+    fp = ROOT / Path("result/preprocessor.pkl")
+    with open(fp, "rb") as f:
+        preprocessor = pickle.load(f)
+    print(preprocessor.ml_vocab_to_index)
+
     # Test
     x = torch.randn(
         Train.batch_size.value,
         HuggingFaceData.max_length.value,
         Decoder_Enum.d_model.value,
     )  # Src sentence embedding with positional encoding
-    y = torch.randn(
-        Train.batch_size.value,
-        HuggingFaceData.max_length.value,
-        Decoder_Enum.d_model.value,
-    )  # Tgt sentence embedding with positional encoding
+
+    y = [
+        "അവൻ വീട്ടിൽ ഇരിക്കുന്നു.",
+        "നിനക്ക് ചായ വേണോ?",
+        "ഞാൻ പുസ്തകം വായിക്കുന്നു.",
+        "അവൾ സുന്ദരിയാണ്.",
+        "കുഞ്ഞ് ഉറങ്ങുന്നു.",
+        "അവൻ സ്കൂളിൽ പഠിക്കുന്നു.",
+        "വാഹനം വളരെ വേഗമാണ്.",
+        "നിന്റെ പേര് എന്താണ്?",
+        "ഞങ്ങൾക്ക് യാത്ര പോകാനാണ്.",
+        "അവൾ ഒരു നല്ല ഗായികയാണ്.",
+        "മഴ പെയ്യുന്നു.",
+        "പൂക്കൾ മനോഹരമാണ്.",
+        "അവൻ നാളെ വരും.",
+        "ഞാൻ സിനിമ കാണുന്നു.",
+        "അവൾ നല്ല ടീച്ചർ ആണ്.",
+        "വീട് വലുതാണ്.",
+        "ഞാൻ ഭക്ഷണം കഴിച്ചു.",
+        "അവൻ കളിക്കുന്നു.",
+        "വായു തണുപ്പാണ്.",
+        "അവൾ പുതിയ ഡ്രസ് വാങ്ങി.",
+        "അവൻ സഹായിക്കാൻ തയാറാണ്.",
+        "പക്ഷികൾ പറക്കുന്നു.",
+        "സൂര്യൻ ദീപ്തിമാനാണ്.",
+        "അവൻ ഓടിക്കൊണ്ടിരിക്കുന്നു.",
+        "എനിക്ക് നീക്കം അറിയില്ല.",
+        "അവളുടെ ശബ്ദം മധുരമാണ്.",
+        "ഞാൻ സന്തോഷവാനാണ്.",
+        "വർഷം തുടങ്ങി.",
+        "അവൻ ചായ കുടിക്കുന്നു.",
+        "അവൾ കഥ പറയുന്നു.",
+        "കാർ റോഡിൽ ഓടുന്നു.",
+        "ഞങ്ങൾ സിനിമക്ക് പോയി.",
+        "കൂടെയൊരാൾ ഉണ്ടോ?",
+        "അവൻ ഭക്ഷണം പാകം ചെയ്യുന്നു.",
+        "വെള്ളം തണുപ്പാണ്.",
+        "ഞങ്ങൾ കളിക്കുന്നു.",
+        "അവൻ പുസ്തകം തിരയുന്നു.",
+        "നിങ്ങൾക്ക് എന്താണ് വേണ്ടത്?",
+        "ഞാൻ വീട്ടിൽ ഇരിക്കുന്നു.",
+        "അവൾ പുതിയ ഫോണൊ വാങ്ങി.",
+        "പകൽ അതിയായി.",
+        "കുഞ്ഞ് ചിരിക്കുന്നു.",
+        "അവൻ ഫുട്ബോൾ കളിക്കുന്നു.",
+        "നിങ്ങൾ എവിടെയാണ്?",
+        "ഞങ്ങൾക്ക് സഹായം വേണം.",
+        "അവൻ ദുഃഖിതനാണ്.",
+        "പൂവുകൾ നല്ലവയാണ്.",
+        "അവൾ പാടിക്കൊണ്ടിരിക്കുന്നു.",
+        "ഞാൻ ജോലി ചെയ്യുന്നു.",
+        "അവൻ സ്കൂളിൽ പോയി.",
+        "മണ്ണ് ചൂടാണ്.",
+        "വെളിച്ചം തിളങ്ങുന്നു.",
+        "അവൾ നല്ല ചിന്തകളുള്ളവളാണ്.",
+        "അവൻ പുസ്തകം വാങ്ങി.",
+        "മഴയും കാറ്റും ശക്തമാണ്.",
+        "കുട്ടികൾ ഉല്ലാസവാനാണ്.",
+        "അവൻ ഫ്ലൈറ്റ് ബുക്ക് ചെയ്തു.",
+        "ഞങ്ങൾ ദീപം കത്തിച്ചു.",
+        "അവൾ പച്ചക്കറി വറുക്കുന്നു.",
+        "കാർ സ്റ്റാർട്ട് ചെയ്തു.",
+        "അവൻ ഓർമ്മപ്പെടുത്തുന്നു.",
+        "ഞങ്ങൾ വിശന്നിരിക്കുന്നു.",
+        "അവൾ നീന്തുന്നു.",
+        "അവൻ പുസ്തകം തുറന്നു.",
+    ]
+
     cross_mask = torch.ones(
         Train.batch_size.value,
         1,
         HuggingFaceData.max_length.value,
         HuggingFaceData.max_length.value,
     )
-    no_lookahead_mask = torch.full(
-        [HuggingFaceData.max_length.value, HuggingFaceData.max_length.value],
-        float("-inf"),
+    self_mask = torch.full(
+        [
+            Train.batch_size.value,
+            1,
+            HuggingFaceData.max_length.value,
+            HuggingFaceData.max_length.value,
+        ],
+        1e-20,
     )
-    no_lookahead_mask = torch.triu(no_lookahead_mask, diagonal=1)
+    self_mask = torch.triu(self_mask, diagonal=1)
 
     decoder = Decoder(
         num_layers=Decoder_Enum.num_layers.value,
@@ -223,5 +335,11 @@ if __name__ == "__main__":
         num_attention_heads=Decoder_Enum.num_attention_heads.value,
         hidden_dim=Decoder_Enum.hidden_dim.value,
         drop_prob=Decoder_Enum.drop_prob.value,
+        max_seq_length=HuggingFaceData.max_length.value,
+        vocab_to_index=preprocessor.ml_vocab_to_index,
+        START_TOKEN=START_TOKEN,
+        END_TOKEN=END_TOKEN,
+        PADDING_TOKEN=PADDING_TOKEN,
     )
-    out = decoder(x, y, cross_mask, no_lookahead_mask)
+    out = decoder(x, y, cross_mask, self_mask, start_token=True, end_token=True)
+    print(out.shape)

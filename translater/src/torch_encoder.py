@@ -4,13 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from typing import List, Dict
-
+from src.preprocess import SentenceEmbedding
 from config.data_dictionary import Encoder_Enum, Train, HuggingFaceData
-
-START_TOKEN = "<START>"
-END_TOKEN = "<END>"
-PADDING_TOKEN = "<PAD>"
 
 
 def get_device():
@@ -59,7 +54,7 @@ class Encoder(nn.Module):
         )  # Note: Sequential APPLIES the layers in order unlike modulelist layer
 
     def forward(self, x, mask, start_token=False, end_token=False):
-        # x: 64, 300, 512
+        # x: (64, )
         # Sequential layer takes only one input, hence to use mask, we need to iterate
         x = self.sentence_embedding(x, start_token, end_token)
         # x: 64, 300, 512
@@ -178,117 +173,16 @@ class FeedForward(nn.Module):
         return x
 
 
-class SentenceEmbedding(nn.Module):
-    def __init__(
-        self,
-        max_seq_length,
-        d_model,
-        vocab_to_index,
-        drop_prob,
-        START_TOKEN,
-        END_TOKEN,
-        PADDING_TOKEN,
-    ):
-        super().__init__()
-        self.max_seq_length = max_seq_length
-        self.d_model = d_model  # Embedding dimension
-        self.vocab_to_index = vocab_to_index
-        self.vocab_size = len(vocab_to_index)
-        self.drop_prob = drop_prob  # Drop after embedding + pos encoding
-        self.START_TOKEN = START_TOKEN
-        self.END_TOKEN = END_TOKEN
-        self.PADDING_TOKEN = PADDING_TOKEN
-        self.embedding = nn.Embedding(
-            self.vocab_size,
-            self.d_model,
-            padding_idx=vocab_to_index[self.PADDING_TOKEN],
-        )
-        self.positional_encoder = PositionalEncoder(
-            self.max_seq_length, self.d_model
-        )  # TBD
-        self.dropout = nn.Dropout(0.1)
-
-    def batch_tokenize(
-        self,
-        batch: List[List[str]],
-        start_token: bool = False,
-        end_token: bool = False,
-    ) -> torch.Tensor:  # (batch, max_sequence_len)
-        """Tokenize in batches"""
-        tokenized_batch = []
-        for sentence in batch:
-            tokenized_batch.append(
-                self.tokenize(
-                    sentence,
-                    self.vocab_to_index,
-                    self.max_seq_length,
-                    start_token,
-                    end_token,
-                )
-            )
-        tokenized_batch = torch.stack(tokenized_batch)
-        return tokenized_batch
-
-    def tokenize(
-        self,
-        sentence: List[str],
-        vocab_to_id: Dict[str, int],
-        max_seq_len: int,
-        start_token: bool = False,
-        end_token: bool = False,
-    ) -> List[int]:
-        """Tokenize a sentence. Optionally add start and end tokens. Always pad with padding token."""
-        tokens = []
-        if start_token:
-            tokens = [vocab_to_id[self.START_TOKEN]]
-        tokens.extend([vocab_to_id[ch] for ch in sentence])
-        if end_token:
-            tokens.append(vocab_to_id[self.END_TOKEN])
-        for _ in range(len(tokens), max_seq_len):
-            tokens.append(vocab_to_id[self.PADDING_TOKEN])
-        return torch.Tensor(tokens)
-
-    def forward(self, x, start_token=False, end_token=False):
-        # x: (batch, )
-        x = self.batch_tokenize(
-            x, start_token, end_token
-        ).long()  # (batch, max_seq_len)
-        x = self.embedding(x)  # (batch, max_seq_len, d_model)
-        pos = self.positional_encoder()  # (batch, max_seq_len, d_model)
-        x = x + pos
-        x = self.dropout(x)
-        return x
-
-
-class PositionalEncoder(nn.Module):
-    def __init__(self, max_seq_len, d_model):
-        super().__init__()
-
-        self.max_seq_len = max_seq_len
-        self.d_model = d_model
-        self.PE = self.get_encoding()
-
-    def forward(self):
-        # x: (batch, max_seq_len, d_model)
-        return self.PE
-
-    def get_encoding(self):  # (mif i % 2 == )
-        even_i = torch.arange(0, self.d_model, 2)
-        denominator = torch.pow(10000, even_i / self.d_model)
-        pos = torch.arange(self.max_seq_len).reshape(self.max_seq_len, 1)
-        even_PE = torch.sin(pos / denominator)
-        odd_PE = torch.cos(pos / denominator)
-        stacked = torch.stack([even_PE, odd_PE], dim=2)
-        PE = torch.flatten(stacked, start_dim=1, end_dim=2)
-        return PE
-
-
 if __name__ == "__main__":
     # Test
 
     import pickle
     from config.data_dictionary import ROOT
     from pathlib import Path
+
+    START_TOKEN = "<START>"
+    END_TOKEN = "<END>"
+    PADDING_TOKEN = "<PAD>"
 
     fp = ROOT / Path("result/preprocessor.pkl")
     with open(fp, "rb") as f:
@@ -381,4 +275,4 @@ if __name__ == "__main__":
         "He helped an old man cross the street.",
     ]
 
-    print(encoder(sentences, mask, start_token=True, end_token=True).shape)
+    print(encoder(sentences, mask, start_token=False, end_token=False).shape)
