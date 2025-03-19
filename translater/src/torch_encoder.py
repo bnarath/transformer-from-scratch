@@ -4,17 +4,53 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from typing import List, Dict
+
 from config.data_dictionary import Encoder_Enum, Train, HuggingFaceData
+
+START_TOKEN = "<START>"
+END_TOKEN = "<END>"
+PADDING_TOKEN = "<PAD>"
+
+
+def get_device():
+    return torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_layers, d_model, num_attention_heads, hidden_dim, drop_prob):
+    def __init__(
+        self,
+        num_layers,
+        d_model,
+        num_attention_heads,
+        hidden_dim,
+        drop_prob,
+        max_seq_length,
+        vocab_to_index,
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+    ):
         super().__init__()
         self.num_layers = num_layers
         self.d_model = d_model
         self.num_attention_heads = num_attention_heads
         self.hidden_dim = hidden_dim
         self.drop_prob = drop_prob
+        self.max_seq_length = max_seq_length
+        self.vocab_to_index = vocab_to_index
+        self.START_TOKEN = START_TOKEN
+        self.END_TOKEN = END_TOKEN
+        self.PADDING_TOKEN = PADDING_TOKEN
+        self.sentence_embedding = SentenceEmbedding(
+            self.max_seq_length,
+            self.d_model,
+            self.vocab_to_index,
+            self.drop_prob,
+            self.START_TOKEN,
+            self.END_TOKEN,
+            self.PADDING_TOKEN,
+        )
         self.layers = nn.Sequential(
             *[
                 Encoder_Block(d_model, num_attention_heads, hidden_dim, drop_prob)
@@ -22,9 +58,11 @@ class Encoder(nn.Module):
             ]
         )  # Note: Sequential APPLIES the layers in order unlike modulelist layer
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, start_token=False, end_token=False):
         # x: 64, 300, 512
         # Sequential layer takes only one input, hence to use mask, we need to iterate
+        x = self.sentence_embedding(x, start_token, end_token)
+        # x: 64, 300, 512
         for layer in self.layers:
             x = layer(x, mask)
         return x  # 64, 300, 512
@@ -140,24 +178,207 @@ class FeedForward(nn.Module):
         return x
 
 
+class SentenceEmbedding(nn.Module):
+    def __init__(
+        self,
+        max_seq_length,
+        d_model,
+        vocab_to_index,
+        drop_prob,
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+    ):
+        super().__init__()
+        self.max_seq_length = max_seq_length
+        self.d_model = d_model  # Embedding dimension
+        self.vocab_to_index = vocab_to_index
+        self.vocab_size = len(vocab_to_index)
+        self.drop_prob = drop_prob  # Drop after embedding + pos encoding
+        self.START_TOKEN = START_TOKEN
+        self.END_TOKEN = END_TOKEN
+        self.PADDING_TOKEN = PADDING_TOKEN
+        self.embedding = nn.Embedding(
+            self.vocab_size,
+            self.d_model,
+            padding_idx=vocab_to_index[self.PADDING_TOKEN],
+        )
+        self.positional_encoder = PositionalEncoder(
+            self.max_seq_length, self.d_model
+        )  # TBD
+        self.dropout = nn.Dropout(0.1)
+
+    def batch_tokenize(
+        self,
+        batch: List[List[str]],
+        start_token: bool = False,
+        end_token: bool = False,
+    ) -> torch.Tensor:  # (batch, max_sequence_len)
+        """Tokenize in batches"""
+        tokenized_batch = []
+        for sentence in batch:
+            tokenized_batch.append(
+                self.tokenize(
+                    sentence,
+                    self.vocab_to_index,
+                    self.max_seq_length,
+                    start_token,
+                    end_token,
+                )
+            )
+        tokenized_batch = torch.stack(tokenized_batch)
+        return tokenized_batch
+
+    def tokenize(
+        self,
+        sentence: List[str],
+        vocab_to_id: Dict[str, int],
+        max_seq_len: int,
+        start_token: bool = False,
+        end_token: bool = False,
+    ) -> List[int]:
+        """Tokenize a sentence. Optionally add start and end tokens. Always pad with padding token."""
+        tokens = []
+        if start_token:
+            tokens = [vocab_to_id[self.START_TOKEN]]
+        tokens.extend([vocab_to_id[ch] for ch in sentence])
+        if end_token:
+            tokens.append(vocab_to_id[self.END_TOKEN])
+        for _ in range(len(tokens), max_seq_len):
+            tokens.append(vocab_to_id[self.PADDING_TOKEN])
+        return torch.Tensor(tokens)
+
+    def forward(self, x, start_token=False, end_token=False):
+        # x: (batch, )
+        x = self.batch_tokenize(
+            x, start_token, end_token
+        ).long()  # (batch, max_seq_len)
+        x = self.embedding(x)  # (batch, max_seq_len, d_model)
+        pos = self.positional_encoder()  # (batch, max_seq_len, d_model)
+        x = x + pos
+        x = self.dropout(x)
+        return x
+
+
+class PositionalEncoder(nn.Module):
+    def __init__(self, max_seq_len, d_model):
+        super().__init__()
+
+        self.max_seq_len = max_seq_len
+        self.d_model = d_model
+        self.PE = self.get_encoding()
+
+    def forward(self):
+        # x: (batch, max_seq_len, d_model)
+        return self.PE
+
+    def get_encoding(self):  # (mif i % 2 == )
+        even_i = torch.arange(0, self.d_model, 2)
+        denominator = torch.pow(10000, even_i / self.d_model)
+        pos = torch.arange(self.max_seq_len).reshape(self.max_seq_len, 1)
+        even_PE = torch.sin(pos / denominator)
+        odd_PE = torch.cos(pos / denominator)
+        stacked = torch.stack([even_PE, odd_PE], dim=2)
+        PE = torch.flatten(stacked, start_dim=1, end_dim=2)
+        return PE
+
+
 if __name__ == "__main__":
     # Test
-    x = torch.randn(
-        Train.batch_size.value,
-        HuggingFaceData.max_length.value,
-        Encoder_Enum.d_model.value,
-    )
-    mask = torch.ones(
-        Train.batch_size.value,
-        1,
-        HuggingFaceData.max_length.value,
-        HuggingFaceData.max_length.value,
-    )
+
+    import pickle
+    from config.data_dictionary import ROOT
+    from pathlib import Path
+
+    fp = ROOT / Path("result/preprocessor.pkl")
+    with open(fp, "rb") as f:
+        preprocessor = pickle.load(f)
+    print(preprocessor.eng_vocab_to_index)
+
     encoder = Encoder(
         num_layers=Encoder_Enum.num_layers.value,
         d_model=Encoder_Enum.d_model.value,
         num_attention_heads=Encoder_Enum.num_attention_heads.value,
         hidden_dim=Encoder_Enum.hidden_dim.value,
         drop_prob=Encoder_Enum.drop_prob.value,
+        max_seq_length=HuggingFaceData.max_length.value,
+        vocab_to_index=preprocessor.eng_vocab_to_index,
+        START_TOKEN=START_TOKEN,
+        END_TOKEN=END_TOKEN,
+        PADDING_TOKEN=PADDING_TOKEN,
     )
-    out = encoder(x, mask)
+
+    mask = torch.ones(
+        Train.batch_size.value,
+        1,
+        HuggingFaceData.max_length.value,
+        HuggingFaceData.max_length.value,
+    )
+    sentences = [
+        "The cat is sleeping.",
+        "She loves reading books.",
+        "He plays soccer every Sunday.",
+        "The sun is shining brightly.",
+        "We are going to the park.",
+        "They have a big house.",
+        "I enjoy drinking coffee.",
+        "The flowers are blooming.",
+        "She writes in her journal daily.",
+        "Birds are singing in the morning.",
+        "My dog loves to run.",
+        "He is watching a movie.",
+        "She made a delicious cake.",
+        "We traveled to a new city.",
+        "The car needs more fuel.",
+        "He studies late at night.",
+        "Children love playing outside.",
+        "It is raining heavily today.",
+        "The wind is blowing hard.",
+        "My friend is visiting soon.",
+        "She bought a new laptop.",
+        "The baby is crying loudly.",
+        "We saw a rainbow yesterday.",
+        "He is learning to swim.",
+        "The train arrives at noon.",
+        "She listens to classical music.",
+        "We visited the museum last week.",
+        "He always wakes up early.",
+        "My sister is a great artist.",
+        "The book was very interesting.",
+        "I found a lost puppy.",
+        "They are having a party tonight.",
+        "She finished her homework quickly.",
+        "We watched a funny movie.",
+        "He enjoys hiking in the mountains.",
+        "The store closes at 9 PM.",
+        "She bought fresh vegetables.",
+        "We are planning a trip to Japan.",
+        "He is practicing the piano.",
+        "I love eating chocolate cake.",
+        "The teacher explained the lesson well.",
+        "They decorated the house for Christmas.",
+        "She solved the puzzle easily.",
+        "We had a picnic at the park.",
+        "He runs five miles every morning.",
+        "The lake is frozen in winter.",
+        "She painted a beautiful sunset.",
+        "We played board games all night.",
+        "The airplane landed smoothly.",
+        "He fixed the broken chair.",
+        "She adopted a stray kitten.",
+        "They are baking cookies together.",
+        "I am writing a short story.",
+        "The mountain view is breathtaking.",
+        "She sang a lovely song.",
+        "We went on a boat ride.",
+        "He is designing a new website.",
+        "The dog barked at the stranger.",
+        "I am learning a new language.",
+        "She took amazing photographs.",
+        "They built a wooden treehouse.",
+        "I enjoyed the science exhibition.",
+        "The coffee shop was crowded.",
+        "He helped an old man cross the street.",
+    ]
+
+    print(encoder(sentences, mask, start_token=True, end_token=True).shape)
