@@ -64,39 +64,34 @@ class Preprocessor:
         )
 
 
-class SentenceEmbedding(nn.Module):
+class BatchTokenizer(nn.Module):
     def __init__(
         self,
         max_seq_length,
-        d_model,
         vocab_to_index,
-        drop_prob,
         START_TOKEN,
         END_TOKEN,
         PADDING_TOKEN,
+        UNKNOWN_TOKEN,
     ):
         super().__init__()
         self.max_seq_length = max_seq_length
-        self.d_model = d_model  # Embedding dimension
         self.vocab_to_index = vocab_to_index
         self.vocab_size = len(vocab_to_index)
-        self.drop_prob = drop_prob  # Drop after embedding + pos encoding
         self.START_TOKEN = START_TOKEN
         self.END_TOKEN = END_TOKEN
         self.PADDING_TOKEN = PADDING_TOKEN
-        self.embedding = nn.Embedding(
-            self.vocab_size,
-            self.d_model,
-            padding_idx=vocab_to_index[self.PADDING_TOKEN],
-        )
-        self.positional_encoder = PositionalEncoder(
-            self.max_seq_length, self.d_model
-        )  # TBD
-        self.dropout = nn.Dropout(0.1)
+        self.UNKNOWN_TOKEN = UNKNOWN_TOKEN
+        self.special_tokens = {
+            self.START_TOKEN,
+            self.END_TOKEN,
+            self.PADDING_TOKEN,
+            self.UNKNOWN_TOKEN,
+        }
 
-    def batch_tokenize(
+    def forward(
         self,
-        batch: List[List[str]],
+        batch: List[str],
         start_token: bool = False,
         end_token: bool = False,
     ) -> torch.Tensor:  # (batch, max_sequence_len)
@@ -127,18 +122,72 @@ class SentenceEmbedding(nn.Module):
         tokens = []
         if start_token:
             tokens = [vocab_to_id[self.START_TOKEN]]
-        tokens.extend([vocab_to_id[ch] for ch in sentence])
+
+        i = 0
+        while i < len(sentence):
+            matched = False
+            # check if sentence at i starts with special token
+            for special_token in self.special_tokens:
+                if sentence[i].startswith(special_token):
+                    # In case of inference, as self.PADDING_TOKEN is part of vocab, output becomes self.PADDING_TOKEN.
+                    # As we use the same output as input, self.PADDING_TOKEN comes as a normal token. In such cases, take it as self.UNKNOWN_TOKEN
+                    id_of_special_token = (
+                        vocab_to_id[special_token]
+                        if special_token != self.PADDING_TOKEN
+                        else vocab_to_id[self.UNKNOWN_TOKEN]
+                    )
+                    tokens.append(id_of_special_token)
+                    i += len(special_token)
+                    matched = True
+                    break
+
+            if not matched:  # If no special token matched, tokenize character-wise
+                tokens.append(
+                    vocab_to_id.get(sentence[i], vocab_to_id[self.UNKNOWN_TOKEN])
+                )
+                i += 1
+
         if end_token:
             tokens.append(vocab_to_id[self.END_TOKEN])
+
         for _ in range(len(tokens), max_seq_len):
             tokens.append(vocab_to_id[self.PADDING_TOKEN])
-        return torch.Tensor(tokens)
 
-    def forward(self, x, start_token=False, end_token=False):
-        # x: (batch, )
-        x = self.batch_tokenize(
-            x, start_token, end_token
-        ).long()  # (batch, max_seq_len)
+        # Ensure max sequence length constraint
+        tokens = tokens[:max_seq_len]
+
+        return torch.tensor(tokens, dtype=torch.long)
+
+
+class SentenceEmbedding(nn.Module):
+    def __init__(
+        self,
+        max_seq_length,
+        d_model,
+        vocab_to_index,
+        drop_prob,
+        PADDING_TOKEN,
+    ):
+        super().__init__()
+        self.max_seq_length = max_seq_length
+        self.d_model = d_model  # Embedding dimension
+        self.vocab_to_index = vocab_to_index
+        self.drop_prob = drop_prob  # Drop after embedding + pos encoding
+        self.PADDING_TOKEN = PADDING_TOKEN
+        self.vocab_size = len(vocab_to_index)
+
+        self.embedding = nn.Embedding(
+            self.vocab_size,
+            self.d_model,
+            padding_idx=vocab_to_index[self.PADDING_TOKEN],
+        )
+        self.positional_encoder = PositionalEncoder(
+            self.max_seq_length, self.d_model
+        )  # TBD
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, x):
+        # x: (batch, max_seq_length)
         x = self.embedding(x)  # (batch, max_seq_len, d_model)
         pos = self.positional_encoder()  # (batch, max_seq_len, d_model)
         x = x + pos

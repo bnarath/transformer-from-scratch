@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.preprocess import SentenceEmbedding
+from src.preprocess import BatchTokenizer, SentenceEmbedding
 from config.data_dictionary import Encoder_Enum, Train, HuggingFaceData
 
 
@@ -25,6 +25,7 @@ class Encoder(nn.Module):
         START_TOKEN,
         END_TOKEN,
         PADDING_TOKEN,
+        UNKNOWN_TOKEN,
     ):
         super().__init__()
         self.num_layers = num_layers
@@ -37,13 +38,20 @@ class Encoder(nn.Module):
         self.START_TOKEN = START_TOKEN
         self.END_TOKEN = END_TOKEN
         self.PADDING_TOKEN = PADDING_TOKEN
+        self.UNKNOWN_TOKEN = UNKNOWN_TOKEN
+        self.batch_tokenizer = BatchTokenizer(
+            self.max_seq_length,
+            self.vocab_to_index,
+            self.START_TOKEN,
+            self.END_TOKEN,
+            self.PADDING_TOKEN,
+            self.UNKNOWN_TOKEN,
+        )
         self.sentence_embedding = SentenceEmbedding(
             self.max_seq_length,
             self.d_model,
             self.vocab_to_index,
             self.drop_prob,
-            self.START_TOKEN,
-            self.END_TOKEN,
             self.PADDING_TOKEN,
         )
         self.layers = nn.Sequential(
@@ -55,9 +63,9 @@ class Encoder(nn.Module):
 
     def forward(self, x, mask, start_token=False, end_token=False):
         # x: (64, )
+        x = self.batch_tokenizer(x, start_token, end_token)  #  64, 300
+        x = self.sentence_embedding(x)  # 64, 300, 512
         # Sequential layer takes only one input, hence to use mask, we need to iterate
-        x = self.sentence_embedding(x, start_token, end_token)
-        # x: 64, 300, 512
         for layer in self.layers:
             x = layer(x, mask)
         return x  # 64, 300, 512
@@ -179,10 +187,12 @@ if __name__ == "__main__":
     import pickle
     from config.data_dictionary import ROOT
     from pathlib import Path
-
-    START_TOKEN = "<START>"
-    END_TOKEN = "<END>"
-    PADDING_TOKEN = "<PAD>"
+    from config.data_dictionary import (
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+        UNKNOWN_TOKEN,
+    )
 
     fp = ROOT / Path("result/preprocessor.pkl")
     with open(fp, "rb") as f:
@@ -200,6 +210,7 @@ if __name__ == "__main__":
         START_TOKEN=START_TOKEN,
         END_TOKEN=END_TOKEN,
         PADDING_TOKEN=PADDING_TOKEN,
+        UNKNOWN_TOKEN=UNKNOWN_TOKEN,
     )
 
     mask = torch.ones(

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 from src.torch_encoder import Encoder
 from src.torch_decoder import Decoder
+from config.data_dictionary import START_TOKEN, END_TOKEN, PADDING_TOKEN, UNKNOWN_TOKEN
 
 
 class Transformer(nn.Module):
@@ -21,6 +22,7 @@ class Transformer(nn.Module):
         START_TOKEN,  # Start token - decoder input has this
         END_TOKEN,  # End Token - decoder output has this
         PADDING_TOKEN,  # Padded to max sequence length
+        UNKNOWN_TOKEN,  # Unkown token used in the tokenizer to make unkown chars (Important in Inference)
     ):
         super().__init__()
         self.target_vocab_size = len(tgt_vocab_to_index)
@@ -36,6 +38,7 @@ class Transformer(nn.Module):
             START_TOKEN,
             END_TOKEN,
             PADDING_TOKEN,
+            UNKNOWN_TOKEN,
         )
         self.decoder = Decoder(
             num_layers,
@@ -48,10 +51,11 @@ class Transformer(nn.Module):
             START_TOKEN,
             END_TOKEN,
             PADDING_TOKEN,
+            UNKNOWN_TOKEN,
         )
         self.linear = nn.Linear(d_model, self.target_vocab_size)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.to(self.device)
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # self.to(self.device)
 
     def forward(
         self,
@@ -60,17 +64,24 @@ class Transformer(nn.Module):
         encoder_self_attention_mask,  # (batch, 1, max seq len, max seq len) - Encoder Padding mask
         decoder_encoder_cross_attention_mask,  # (batch, 1, max seq len, max seq len) Decoder & Encoder Padding Mask
         decoder_self_attention_mask,  # (batch, 1, max seq len, max seq len) - Decoder Padding mask + No look ahead mask
+        enc_start_token=False,
+        enc_end_token=False,
+        dec_start_token=False,
+        dec_end_token=True,
     ):
         encoder_output = self.encoder(
-            src, encoder_self_attention_mask, start_token=False, end_token=False
+            src,
+            encoder_self_attention_mask,
+            start_token=enc_start_token,
+            end_token=enc_end_token,
         )  # (batch, max seq len, d_model)
         decoder_output = self.decoder(
             encoder_output,
             tgt,
             decoder_encoder_cross_attention_mask,
             decoder_self_attention_mask,
-            start_token=True,
-            end_token=False,
+            start_token=dec_start_token,
+            end_token=dec_end_token,
         )  # (batch, max seq len, d_model)
 
         output = self.linear(
@@ -92,10 +103,6 @@ if __name__ == "__main__":
         Train,
         HuggingFaceData,
     )
-
-    START_TOKEN = "<START>"
-    END_TOKEN = "<END>"
-    PADDING_TOKEN = "<PAD>"
 
     fp = ROOT / Path("result/preprocessor.pkl")
     with open(fp, "rb") as f:
@@ -272,6 +279,7 @@ if __name__ == "__main__":
         START_TOKEN=START_TOKEN,
         END_TOKEN=END_TOKEN,
         PADDING_TOKEN=PADDING_TOKEN,
+        UNKNOWN_TOKEN=UNKNOWN_TOKEN,
     )
 
     print(

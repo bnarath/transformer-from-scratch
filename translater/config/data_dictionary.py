@@ -7,6 +7,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 
+START_TOKEN = "<START>"
+END_TOKEN = "<END>"
+PADDING_TOKEN = "<PAD>"
+UNKNOWN_TOKEN = "<UNK>"
+NEG_INFINITY = -1e20
+
 
 class HuggingFaceData(Enum):
     dataset = "ai4bharat/samanantar"
@@ -20,18 +26,20 @@ class HuggingFaceData(Enum):
     test_split_ratio = 0.2
     max_length = 300  # After checking 99% percentile of sentence length
     seed = 1
-    max_train_size = 1000000
-    max_test_size = 200000
+    max_train_size = 200000
+    max_test_size = 20000
     preprocessor_file = "result/preprocessor.pkl"  # contains vocab, vocab <-> index map, valid eng, ml pairs
 
 
 class Train(Enum):
     batch_size = 64
     seed = 1
+    learning_rate = 1e-4
+    num_epochs = 10
 
 
 class Encoder_Enum(Enum):
-    num_layers = 5
+    num_layers = 2
     d_model = (
         512  # the dimensionality of the model's hidden states or embeddings, q, k, v
     )
@@ -42,12 +50,8 @@ class Encoder_Enum(Enum):
 
 
 class Decoder_Enum(Enum):
-    num_layers = 5
+    num_layers = 2
     d_model = 512
     num_attention_heads = 8
     drop_prob = 0.1
     hidden_dim = 2048
-
-
-class Training:
-    framework = "torch"

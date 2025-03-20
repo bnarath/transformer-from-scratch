@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.preprocess import SentenceEmbedding
+from src.preprocess import BatchTokenizer, SentenceEmbedding
 from config.data_dictionary import Decoder_Enum, Train, HuggingFaceData
 
 
@@ -21,6 +21,7 @@ class Decoder(nn.Module):
         START_TOKEN,
         END_TOKEN,
         PADDING_TOKEN,
+        UNKNOWN_TOKEN,
     ):
         super().__init__()
         self.num_layers = num_layers
@@ -33,19 +34,26 @@ class Decoder(nn.Module):
         self.START_TOKEN = START_TOKEN
         self.END_TOKEN = END_TOKEN
         self.PADDING_TOKEN = PADDING_TOKEN
+        self.UNKNOWN_TOKEN = UNKNOWN_TOKEN
         self.layers = nn.Sequential(
             *[
                 Decoder_Block(d_model, num_attention_heads, hidden_dim, drop_prob)
                 for _ in range(self.num_layers)
             ]
         )  # Note: Sequential APPLIES the layers in order unlike modulelist layer
+        self.batch_tokenizer = BatchTokenizer(
+            self.max_seq_length,
+            self.vocab_to_index,
+            self.START_TOKEN,
+            self.END_TOKEN,
+            self.PADDING_TOKEN,
+            self.UNKNOWN_TOKEN,
+        )
         self.sentence_embedding = SentenceEmbedding(
             self.max_seq_length,
             self.d_model,
             self.vocab_to_index,
             self.drop_prob,
-            self.START_TOKEN,
-            self.END_TOKEN,
             self.PADDING_TOKEN,
         )
 
@@ -55,8 +63,9 @@ class Decoder(nn.Module):
         # cross_mask: 64, 1, 300, 300
         # self_mask: 64, 1, 300, 300
 
+        y = self.batch_tokenizer(y, start_token, end_token)  # 64, 300
+        y = self.sentence_embedding(y)  # 64, 300, 512
         # Sequential layer takes only one input, hence to use x, y and masks, we need to iterate
-        y = self.sentence_embedding(y, start_token, end_token)  #
         for layer in self.layers:
             y = layer(x, y, cross_mask, self_mask)  # 64, 300, 512
 
@@ -228,10 +237,12 @@ if __name__ == "__main__":
     import pickle
     from config.data_dictionary import ROOT
     from pathlib import Path
-
-    START_TOKEN = "<START>"
-    END_TOKEN = "<END>"
-    PADDING_TOKEN = "<PAD>"
+    from config.data_dictionary import (
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+        UNKNOWN_TOKEN,
+    )
 
     fp = ROOT / Path("result/preprocessor.pkl")
     with open(fp, "rb") as f:
@@ -340,6 +351,7 @@ if __name__ == "__main__":
         START_TOKEN=START_TOKEN,
         END_TOKEN=END_TOKEN,
         PADDING_TOKEN=PADDING_TOKEN,
+        UNKNOWN_TOKEN=UNKNOWN_TOKEN,
     )
     out = decoder(x, y, cross_mask, self_mask, start_token=True, end_token=False)
     print(out.shape)
