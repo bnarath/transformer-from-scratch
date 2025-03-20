@@ -26,8 +26,8 @@ class HuggingFaceData(Enum):
     test_split_ratio = 0.2
     max_length = 300  # After checking 99% percentile of sentence length
     seed = 1
-    max_train_size = 2000
-    max_test_size = 200
+    max_train_size = 200000
+    max_test_size = 20000
     preprocessor_file = "result/preprocessor.pkl"  # contains vocab, vocab <-> index map, valid eng, ml pairs
 
 

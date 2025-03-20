@@ -9,11 +9,9 @@ The implementation will be provided in both PyTorch and TensorFlow, with two app
 - **Word-by-word translation**
 
 ## To Run:
-
-###  Pytorch Letter by Letter
-    ```
-    TBD
-    ```
+```
+sh run.sh
+```
 
 ## Data
 
