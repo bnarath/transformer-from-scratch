@@ -24,6 +24,7 @@ from config.data_dictionary import (
 from pathlib import Path
 import os
 import pickle
+import time
 import logging
 from typing import Tuple, List, Dict
 
@@ -39,6 +40,9 @@ class PyTorch_Letter_By_Letter_Translation:
     ):
         self.framework = "pytorch"
         self.type = "letter_by_letter"
+        self.checkpoint_dir = ROOT / Path(Train.checkpoint_dir.value)
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_path = self.checkpoint_dir / "checkpoint.pth"
         self.device = (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
@@ -123,13 +127,25 @@ class PyTorch_Letter_By_Letter_Translation:
                 nn.init.xavier_uniform_(p)
 
     def build(self):
-        # print(self.transformer)
-        # print(list(self.transformer.parameters()))
+        # logging.info(self.transformer)
+        # logging.info(list(self.transformer.parameters()))
 
-        total_loss = 0
+        start_time = time.time()
 
-        for epoch in range(self.num_epochs):
-            print(f"Epoch {epoch}")
+        start_epoch = 0
+        best_loss = float("inf")
+        # Load checkpoint if it exists
+        if self.checkpoint_path.exists():
+            checkpoint = torch.load(self.checkpoint_path)
+            self.transformer.load_state_dict(checkpoint["model_state_dict"])
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            best_loss = checkpoint["best_loss"]
+            logging.info(f"Resuming from epoch {start_epoch}, best loss: {best_loss}")
+
+        for epoch in range(start_epoch, self.num_epochs):
+            logging.info(f"Epoch {epoch}")
+            epoch_loss = 0.0
             for batch_idx, batch in enumerate(self.train_dataloader):
                 # batch : [(64, ), (64, )]
                 # self.transformer.train()  # Train mode : Dropout, Batch norm on (Batch norm not applicable in our case)
@@ -179,71 +195,43 @@ class PyTorch_Letter_By_Letter_Translation:
                 loss = (
                     loss.sum() / non_padding_indices.sum()
                 )  # Loss of padding indices will be zero
+                epoch_loss += loss.item()
                 loss.backward()
                 self.optimizer.step()
 
                 if batch_idx % 1000 == 0:
-                    print(f"Batch num {batch_idx} : Batch Loss is {loss.item()}")
-                    print(f"One sentence in English : {src[0]}")
-                    print(f"Same sentence in Malayalam : {tgt[0]}")
-                    predicted = torch.argmax(logits[0], dim=-1).tolist()
-                    predicted_sentence = self.detockenize(
-                        predicted, self.ml_index_to_vocab
-                    )
-                    print(f"Predicted Malayalam : {predicted_sentence}")
+                    logging.info(f"Testing @ epoch = {epoch}, batch = {batch_idx}")
+                    self.test()
+            #     break
+            avg_epoch_loss = epoch_loss / len(self.train_dataloader)
+            logging.info(f"Average training loss @epoch {epoch} is {avg_epoch_loss}")
+            avg_validation_loss = self.get_validation_loss()  # per epoch
+            logging.info(
+                f"Average validation loss @epoch {epoch} is {avg_validation_loss}"
+            )
 
-                    # Inference test
-                    self.transformer.eval()
-                    eg_ml = ("",)
-                    eg_english = ("It was fun coding the transformer from scratch",)
+            if avg_validation_loss < best_loss:
+                best_loss = avg_validation_loss
+                checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": self.transformer.state_dict(),
+                    "optimizer_state_dict": self.optimizer.state_dict(),
+                    "best_loss": best_loss,
+                }
+                torch.save(checkpoint, self.checkpoint_path)
+                logging.info(
+                    f"Checkpoint saved at epoch {epoch} with best validation loss {best_loss:.4f}"
+                )
+            # break
+        end_time = time.time()
+        # Compute total training time
+        total_time = end_time - start_time
+        hours, rem = divmod(total_time, 3600)
+        minutes, seconds = divmod(rem, 60)
 
-                    eg_english_tokenized = self.src_batch_tokenizer(
-                        eg_english, start_token=False, end_token=False
-                    )  # (1, 300)
-
-                    for i in range(self.max_seq_length - 1):  # To consider start token
-
-                        eg_ml_tokenized = self.tgt_batch_tokenizer(
-                            eg_ml, start_token=True, end_token=False
-                        )  # (1, 300)
-                        (
-                            eg_encoder_self_attention_mask,
-                            eg_decoder_self_attention_mask,
-                            eg_decoder_cross_attention_mask,
-                        ) = self.create_masks(
-                            [eg_english_tokenized, eg_ml_tokenized],
-                            self.max_seq_length,
-                            self.eng_vocab_to_index[self.PADDING_TOKEN],
-                            self.ml_vocab_to_index[self.PADDING_TOKEN],
-                        )
-
-                        eg_logits = self.transformer(
-                            eg_english,
-                            eg_ml,
-                            eg_encoder_self_attention_mask.to(self.device),
-                            eg_decoder_cross_attention_mask.to(self.device),
-                            eg_decoder_self_attention_mask.to(self.device),
-                            enc_start_token=False,
-                            enc_end_token=False,
-                            dec_start_token=True,
-                            dec_end_token=False,
-                        ).to(self.device)
-
-                        next_token_logit_distribution = eg_logits[0][i]
-                        # next word for ith word's logit - shape is (vocab_size, )
-
-                        next_token_index = torch.argmax(
-                            next_token_logit_distribution
-                        ).item()
-                        next_token = self.ml_index_to_vocab[next_token_index]
-
-                        eg_ml = (eg_ml[0] + next_token,)
-
-                        if next_token == self.END_TOKEN:
-                            break
-                    print(f"{eg_english[0]} -> {eg_ml[0]}")
-                break
-            break
+        logging.info(
+            f"Total Training Time to run {self.num_epochs-start_epoch} epochs:  {int(hours)}h {int(minutes)}m {int(seconds)}s"
+        )
 
     def get_input(self) -> Tuple[DataLoader]:
         """Torch dataset for training"""
@@ -356,6 +344,114 @@ class PyTorch_Letter_By_Letter_Translation:
             decoder_self_attention_mask.unsqueeze(dim=1),
             decoder_cross_attention_mask.unsqueeze(dim=1),
         )
+
+    def test(self):
+        # Inference test on a specific english sentence
+        self.transformer.eval()  # no dropout
+
+        eg_ml = ("",)
+        eg_english = ("It was fun coding the transformer from scratch",)
+
+        with torch.no_grad():  # Disable gradient computation for efficiency
+
+            eg_english_tokenized = self.src_batch_tokenizer(
+                eg_english, start_token=False, end_token=False
+            )  # (1, 300)
+
+            for i in range(self.max_seq_length - 1):  # To consider start token
+
+                eg_ml_tokenized = self.tgt_batch_tokenizer(
+                    eg_ml, start_token=True, end_token=False
+                )  # (1, 300)
+                (
+                    eg_encoder_self_attention_mask,
+                    eg_decoder_self_attention_mask,
+                    eg_decoder_cross_attention_mask,
+                ) = self.create_masks(
+                    [eg_english_tokenized, eg_ml_tokenized],
+                    self.max_seq_length,
+                    self.eng_vocab_to_index[self.PADDING_TOKEN],
+                    self.ml_vocab_to_index[self.PADDING_TOKEN],
+                )
+
+                eg_logits = self.transformer(
+                    eg_english,
+                    eg_ml,
+                    eg_encoder_self_attention_mask.to(self.device),
+                    eg_decoder_cross_attention_mask.to(self.device),
+                    eg_decoder_self_attention_mask.to(self.device),
+                    enc_start_token=False,
+                    enc_end_token=False,
+                    dec_start_token=True,
+                    dec_end_token=False,
+                ).to(self.device)
+
+                next_token_logit_distribution = eg_logits[0][i]
+                # next word of ith word's logit - shape is (vocab_size, )
+
+                next_token_index = torch.argmax(next_token_logit_distribution).item()
+                next_token = self.ml_index_to_vocab[next_token_index]
+
+                eg_ml = (eg_ml[0] + next_token,)
+
+                if next_token == self.END_TOKEN:
+                    break
+            logging.info(f"{eg_english[0]} -> {eg_ml[0]}")
+            logging.info("_________________________________________________________")
+
+    def get_validation_loss(self):
+        self.transformer.eval()  # Set model to evaluation mode
+        total_loss = 0.0
+
+        with torch.no_grad():  # Disable gradient computation for efficiency
+            for batch in self.test_dataloader:
+                src, tgt = batch
+
+                src_tokenized = self.src_batch_tokenizer(
+                    src, start_token=False, end_token=False
+                )
+                tgt_tokenized = self.tgt_batch_tokenizer(
+                    tgt, start_token=True, end_token=False
+                )
+
+                (
+                    encoder_self_attention_mask,
+                    decoder_self_attention_mask,
+                    decoder_cross_attention_mask,
+                ) = self.create_masks(
+                    (src_tokenized, tgt_tokenized),
+                    self.max_seq_length,
+                    self.eng_vocab_to_index[self.PADDING_TOKEN],
+                    self.ml_vocab_to_index[self.PADDING_TOKEN],
+                )
+
+                logits = self.transformer(
+                    src,
+                    tgt,
+                    encoder_self_attention_mask.to(self.device),
+                    decoder_cross_attention_mask.to(self.device),
+                    decoder_self_attention_mask.to(self.device),
+                ).to(self.device)
+
+                labels = self.tgt_batch_tokenizer(
+                    tgt, start_token=False, end_token=True
+                ).to(self.device)
+
+                loss = self.loss(logits.view(-1, logits.shape[-1]), labels.view(-1))
+
+                non_padding_indices = (
+                    labels.view(-1) != self.ml_vocab_to_index[self.PADDING_TOKEN]
+                ).to(self.device)
+
+                loss = (
+                    loss.sum() / non_padding_indices.sum()
+                )  # Average loss per word in that batch
+
+                total_loss += loss.item()
+
+        return total_loss / len(
+            self.test_dataloader
+        )  # Return average validation loss (avg loss per word)
 
 
 class TranslationDataset(Dataset):
