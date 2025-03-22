@@ -153,7 +153,7 @@ If you use this project or related methods, please cite the [original Transforme
     $= - \frac{1}{N'} \sum_{i=1}^{N}$
     $\sum_{t=1}^{T}$
     $\mathbb{1}_{\text{not padding}}$
-    $\log(\hat{{y}_{i,t}, y_{i,t}})$
+    <!-- $\log(\hat{{y}_{i,t}, y_{i,t}})$ -->
 
     Where:
     - $N$ is the batch size,
