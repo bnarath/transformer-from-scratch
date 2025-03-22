@@ -1,6 +1,6 @@
 # Transformer-from-Scratch: English-to-Malayalam Machine Translation
 
-[![Python](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-312/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=flat&logo=PyTorch&logoColor=white)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dataset](https://img.shields.io/badge/Dataset-ai4bharat%2Fsamanantar-blue)](https://huggingface.co/datasets/ai4bharat/samanantar)
