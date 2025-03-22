@@ -154,7 +154,8 @@ If you use this project or related methods, please cite the [original Transforme
     $\sum_{t=1}^{T}$
     $\mathbb{1}_{\text{not padding}} \log(y)$
 
-    $\hat{y}_{i,t}, y_{i,t}$
+    $\hat{y}_{i,t} of y_{i,t}$
+    $\hat{y}_{i,t}$ 
 
     Where:
     - $N$ is the batch size,
