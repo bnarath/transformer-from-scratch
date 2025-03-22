@@ -148,12 +148,8 @@ If you use this project or related methods, please cite the [original Transforme
 
     For a batch of size $N$, the total loss is the sum of the losses for all tokens in the batch, ignoring padding tokens. Padding tokens are excluded by setting their contribution to 0 in the loss calculation. The final formula for the batch loss is:
 
-    $\text{Batch}_{\text{Loss}}$
-
-    $= - \frac{1}{N'} \sum_{i=1}^{N}$
-    $\sum_{t=1}^{T}$
-    $\mathbb{1}_{\text{not padding}}\log{(\hat{y}_{i,t})}$
-
+    $\text{Batch}_{\text{Loss}} = - \frac{1}{N'} \sum_{i=1}^{N} \sum_{t=1}^{T} \mathbb{1}_{\text{not padding}} \log({\hat{y}_{i,t}}_{(y_{i,t})})$
+    
     Where:
     - $N$ is the batch size,
     - $T$ is the sequence length (number of tokens in each sentence),
