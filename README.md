@@ -80,25 +80,21 @@ If you use this project or related methods, please cite the [original Transforme
 - **Attention (Scaled Dot-Product Attention):**
   - The attention mechanism computes a weighted sum of values (V) based on the similarity between the query (Q) and the key (K). The formula for this is:
 
-    $$
-      \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
-    $$
+    $\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$
 
-    - $ Q $: Query matrix (What am I looking for?). 
-    - $ K $: Key matrix (What do I have). 
-    - $ V $: VAlue matrix (What do I offer)
+    - $Q$: Query matrix (What am I looking for?). 
+    - $K$: Key matrix (What do I have). 
+    - $V$: VAlue matrix (What do I offer)
 
-      - The size of $ Q $, $ K $ and $ V $ is: $ [batch\_size, num\_heads, seq\_len, d_k] $
+      - The size of $Q$, $K$ and $V$ is: $[batch\_size, num\_heads, seq\_len, d_k]$
     
     - The softmax function is applied to ensure the attention weights sum to 1.
 
 - **Masked Attention**
 
-    $$
-      \text{Masked Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}} + M\right)V
-    $$
+    $\text{Masked Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}} + M\right)V$
 
-    - The mask is represented as a large negative value (typically $- \infty$) at positions that need to be masked, and 0 at all other positions.
+    - The mask is represented as a large negative value (typically $-\infty$) at positions that need to be masked, and 0 at all other positions.
 
     - Both the encoder and decoder incorporate a padding mask. This is necessary because the input sequences are padded to a fixed length, matching the maximum sequence length. As a result, the model should ignore the padding tokens, ensuring that they neither attend to other tokens nor are attended to.
 
@@ -111,27 +107,19 @@ If you use this project or related methods, please cite the [original Transforme
 - **Layer Normalization:**
   - Layer normalization is applied to stabilize and speed up training, as described in the original Transformer paper. We normalize the layer's activations (neurons). It stabilizes training by ensuring the activations have a consistent scale and distribution, which can improve convergence speed.
 
-  Given an input vector $ f(x) = [x_1, x_2, ..., x_d] $ (where  d is the number of features):
+  Given an input vector $f(x) = [x_1, x_2, ..., x_d]$ (where  d is the number of features):
 
   1. **Compute the mean and variance** of the input across the features:
-    $$
-    \mu = \frac{1}{d} \sum_{i=1}^{d} x_i
-    $$
+    $\mu = \frac{1}{d} \sum_{i=1}^{d} x_i$
 
-    $$
-    \sigma^2 = \frac{1}{d} \sum_{i=1}^{d} (x_i - \mu)^2
-    $$
+    $\sigma^2 = \frac{1}{d} \sum_{i=1}^{d} (x_i - \mu)^2$
 
   2. **Normalize the input**:
-    $$
-    \hat{x_i} = \frac{x_i - \mu}{\sqrt{\sigma^2 + \epsilon}}
-    $$
-    Where $ \epsilon $  is a small constant added for numerical stability.
+    $\hat{x_i} = \frac{x_i - \mu}{\sqrt{\sigma^2 + \epsilon}}$
+    Where $\epsilon$  is a small constant added for numerical stability.
 
-  3. **Scale and shift** the normalized output using learnable parameters $ \gamma $ (scale) and $ \beta $ (shift):
-    $$
-    y_i = \gamma \hat{x_i} + \beta
-    $$
+  3. **Scale and shift** the normalized output using learnable parameters $ \gamma $(scale)$ and $\beta$ (shift):
+    $y_i = \gamma \hat{x_i} + \beta$
 
 
   
@@ -154,20 +142,18 @@ If you use this project or related methods, please cite the [original Transforme
     The **Cross-Entropy Loss** for a batch of tokens is calculated as the sum of individual losses for each token, excluding padding tokens. The formula for calculating the cross-entropy loss for a single token $t$ in sequence $i$ is:
 
     Where:
-    - $ \hat{y}_{i,t} $ is the predicted probability distribution over the vocabulary for the $t$-th token in sentence $i$ (after applying softmax).
+    - $\hat{y}_{i,t}$ is the predicted probability distribution over the vocabulary for the $t$-th token in sentence $i$ (after applying softmax).
     - $y_{i,t}$ is the true class (or the correct token) at position $t$ in sequence $i$.
 
 
-    For a batch of size \( N \), the total loss is the sum of the losses for all tokens in the batch, ignoring padding tokens. Padding tokens are excluded by setting their contribution to 0 in the loss calculation. The final formula for the batch loss is:
+    For a batch of size $N$, the total loss is the sum of the losses for all tokens in the batch, ignoring padding tokens. Padding tokens are excluded by setting their contribution to 0 in the loss calculation. The final formula for the batch loss is:
 
-    $$
-    \text{Batch}_{\text{Loss}} = - \frac{1}{N'} \sum_{i=1}^{N} \sum_{t=1}^{T} \mathbb{1}_{\text{not padding}} \log(\hat{y}_{i,t, y_{i,t}})
-    $$
+    $text{Batch}_{\text{Loss}} = - \frac{1}{N'} \sum_{i=1}^{N} \sum_{t=1}^{T} \mathbb{1}_{\text{not padding}} \log(\hat{y}_{i,t, y_{i,t}})$
 
 
     Where:
-    - $ N $ is the batch size,
-    - $ T $ is the sequence length (number of tokens in each sentence),
+    - $N$ is the batch size,
+    - $T$ is the sequence length (number of tokens in each sentence),
     - $N'$ is the total number of non-padded tokens in the batch,
     - $\mathbb{1}_{\text{not padding}}$ is an indicator function that is 1 if the token is not padding and 0 if it is padding.
 
