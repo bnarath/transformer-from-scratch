@@ -175,7 +175,9 @@ class SentenceEmbedding(nn.Module):
         self.drop_prob = drop_prob  # Drop after embedding + pos encoding
         self.PADDING_TOKEN = PADDING_TOKEN
         self.vocab_size = len(vocab_to_index)
-
+        self.device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
         self.embedding = nn.Embedding(
             self.vocab_size,
             self.d_model,
@@ -185,11 +187,12 @@ class SentenceEmbedding(nn.Module):
             self.max_seq_length, self.d_model
         )  # TBD
         self.dropout = nn.Dropout(0.1)
+        self.to(self.device)
 
     def forward(self, x):
         # x: (batch, max_seq_length)
         x = self.embedding(x)  # (batch, max_seq_len, d_model)
-        pos = self.positional_encoder()  # (batch, max_seq_len, d_model)
+        pos = self.positional_encoder().to(self.device)  # (batch, max_seq_len, d_model)
         x = x + pos
         x = self.dropout(x)
         return x

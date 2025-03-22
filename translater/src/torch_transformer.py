@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+from src.preprocess import BatchTokenizer
 from src.torch_encoder import Encoder
 from src.torch_decoder import Decoder
 from config.data_dictionary import START_TOKEN, END_TOKEN, PADDING_TOKEN, UNKNOWN_TOKEN
@@ -19,10 +19,7 @@ class Transformer(nn.Module):
         max_seq_length,  # Maximum sequence length, same in both Src and Target
         src_vocab_to_index,  # Mapping of src language vocab to index
         tgt_vocab_to_index,  # Mapping of tgt language  vocab to index
-        START_TOKEN,  # Start token - decoder input has this
-        END_TOKEN,  # End Token - decoder output has this
         PADDING_TOKEN,  # Padded to max sequence length
-        UNKNOWN_TOKEN,  # Unkown token used in the tokenizer to make unkown chars (Important in Inference)
     ):
         super().__init__()
         self.target_vocab_size = len(tgt_vocab_to_index)
@@ -35,10 +32,7 @@ class Transformer(nn.Module):
             drop_prob,
             max_seq_length,
             src_vocab_to_index,
-            START_TOKEN,
-            END_TOKEN,
             PADDING_TOKEN,
-            UNKNOWN_TOKEN,
         )
         self.decoder = Decoder(
             num_layers,
@@ -48,10 +42,7 @@ class Transformer(nn.Module):
             drop_prob,
             max_seq_length,
             tgt_vocab_to_index,
-            START_TOKEN,
-            END_TOKEN,
             PADDING_TOKEN,
-            UNKNOWN_TOKEN,
         )
         self.linear = nn.Linear(d_model, self.target_vocab_size)
         # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -59,8 +50,8 @@ class Transformer(nn.Module):
 
     def forward(
         self,
-        src,  # (batch,)
-        tgt,  # (batch,)
+        src,  # (batch, max seq len)
+        tgt,  # (batch, max seq len)
         encoder_self_attention_mask,  # (batch, 1, max seq len, max seq len) - Encoder Padding mask
         decoder_encoder_cross_attention_mask,  # (batch, 1, max seq len, max seq len) Decoder & Encoder Padding Mask
         decoder_self_attention_mask,  # (batch, 1, max seq len, max seq len) - Decoder Padding mask + No look ahead mask
@@ -109,7 +100,7 @@ if __name__ == "__main__":
         preprocessor = pickle.load(f)
     print(preprocessor.ml_vocab_to_index)
 
-    x = [
+    _x = [
         "The cat is sleeping.",
         "She loves reading books.",
         "He plays soccer every Sunday.",
@@ -176,7 +167,18 @@ if __name__ == "__main__":
         "He helped an old man cross the street.",
     ]
 
-    y = [
+    src_batch_tokenizer = BatchTokenizer(
+        HuggingFaceData.max_length.value,
+        preprocessor.eng_vocab_to_index,
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+        UNKNOWN_TOKEN,
+    )
+
+    x = src_batch_tokenizer(_x, start_token=False, end_token=False)  # (64, 300)
+
+    _y = [
         "പൂച്ച ഉറങ്ങുകയാണ്.",
         "അവൾ പുസ്തകങ്ങൾ വായിക്കാൻ ഇഷ്ടപ്പെടുന്നു.",
         "അവൻ എല്ലാ ഞായറാഴ്ചയും ഫുട്ബോൾ കളിക്കുന്നു.",
@@ -243,6 +245,17 @@ if __name__ == "__main__":
         "അവൻ ഒരു വയോധികനെ റോഡ് കടക്കാൻ സഹായിച്ചു.",
     ]
 
+    tgt_batch_tokenizer = BatchTokenizer(
+        HuggingFaceData.max_length.value,
+        preprocessor.ml_vocab_to_index,
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+        UNKNOWN_TOKEN,
+    )
+
+    y = tgt_batch_tokenizer(_y, start_token=True, end_token=False)  # (64, 300)
+
     encoder_self_mask = torch.ones(
         Train.batch_size.value,
         1,
@@ -276,10 +289,7 @@ if __name__ == "__main__":
         max_seq_length=HuggingFaceData.max_length.value,
         src_vocab_to_index=preprocessor.eng_vocab_to_index,  # Mapping of src language vocab to index
         tgt_vocab_to_index=preprocessor.ml_vocab_to_index,  # Mapping of tgt language  vocab to index
-        START_TOKEN=START_TOKEN,
-        END_TOKEN=END_TOKEN,
         PADDING_TOKEN=PADDING_TOKEN,
-        UNKNOWN_TOKEN=UNKNOWN_TOKEN,
     )
 
     print(

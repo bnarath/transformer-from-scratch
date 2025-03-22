@@ -22,10 +22,7 @@ class Encoder(nn.Module):
         drop_prob,
         max_seq_length,
         vocab_to_index,
-        START_TOKEN,
-        END_TOKEN,
         PADDING_TOKEN,
-        UNKNOWN_TOKEN,
     ):
         super().__init__()
         self.num_layers = num_layers
@@ -35,18 +32,7 @@ class Encoder(nn.Module):
         self.drop_prob = drop_prob
         self.max_seq_length = max_seq_length
         self.vocab_to_index = vocab_to_index
-        self.START_TOKEN = START_TOKEN
-        self.END_TOKEN = END_TOKEN
         self.PADDING_TOKEN = PADDING_TOKEN
-        self.UNKNOWN_TOKEN = UNKNOWN_TOKEN
-        self.batch_tokenizer = BatchTokenizer(
-            self.max_seq_length,
-            self.vocab_to_index,
-            self.START_TOKEN,
-            self.END_TOKEN,
-            self.PADDING_TOKEN,
-            self.UNKNOWN_TOKEN,
-        )
         self.sentence_embedding = SentenceEmbedding(
             self.max_seq_length,
             self.d_model,
@@ -62,8 +48,7 @@ class Encoder(nn.Module):
         )  # Note: Sequential APPLIES the layers in order unlike modulelist layer
 
     def forward(self, x, mask, start_token=False, end_token=False):
-        # x: (64, )
-        x = self.batch_tokenizer(x, start_token, end_token)  #  64, 300
+        # x: (64, 300)
         x = self.sentence_embedding(x)  # 64, 300, 512
         # Sequential layer takes only one input, hence to use mask, we need to iterate
         for layer in self.layers:
@@ -207,10 +192,7 @@ if __name__ == "__main__":
         drop_prob=Encoder_Enum.drop_prob.value,
         max_seq_length=HuggingFaceData.max_length.value,
         vocab_to_index=preprocessor.eng_vocab_to_index,
-        START_TOKEN=START_TOKEN,
-        END_TOKEN=END_TOKEN,
         PADDING_TOKEN=PADDING_TOKEN,
-        UNKNOWN_TOKEN=UNKNOWN_TOKEN,
     )
 
     mask = torch.ones(
@@ -219,7 +201,7 @@ if __name__ == "__main__":
         HuggingFaceData.max_length.value,
         HuggingFaceData.max_length.value,
     )
-    sentences = [
+    batch_sentences = [
         "The cat is sleeping.",
         "She loves reading books.",
         "He plays soccer every Sunday.",
@@ -286,4 +268,17 @@ if __name__ == "__main__":
         "He helped an old man cross the street.",
     ]
 
-    print(encoder(sentences, mask, start_token=False, end_token=False).shape)
+    src_batch_tokenizer = BatchTokenizer(
+        HuggingFaceData.max_length.value,
+        preprocessor.eng_vocab_to_index,
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+        UNKNOWN_TOKEN,
+    )
+
+    x = src_batch_tokenizer(
+        batch_sentences, start_token=False, end_token=False
+    )  # (64, 300)
+
+    print(encoder(x, mask, start_token=False, end_token=False).shape)

@@ -18,10 +18,7 @@ class Decoder(nn.Module):
         drop_prob,
         max_seq_length,
         vocab_to_index,
-        START_TOKEN,
-        END_TOKEN,
         PADDING_TOKEN,
-        UNKNOWN_TOKEN,
     ):
         super().__init__()
         self.num_layers = num_layers
@@ -31,24 +28,13 @@ class Decoder(nn.Module):
         self.drop_prob = drop_prob
         self.max_seq_length = max_seq_length
         self.vocab_to_index = vocab_to_index
-        self.START_TOKEN = START_TOKEN
-        self.END_TOKEN = END_TOKEN
         self.PADDING_TOKEN = PADDING_TOKEN
-        self.UNKNOWN_TOKEN = UNKNOWN_TOKEN
         self.layers = nn.Sequential(
             *[
                 Decoder_Block(d_model, num_attention_heads, hidden_dim, drop_prob)
                 for _ in range(self.num_layers)
             ]
         )  # Note: Sequential APPLIES the layers in order unlike modulelist layer
-        self.batch_tokenizer = BatchTokenizer(
-            self.max_seq_length,
-            self.vocab_to_index,
-            self.START_TOKEN,
-            self.END_TOKEN,
-            self.PADDING_TOKEN,
-            self.UNKNOWN_TOKEN,
-        )
         self.sentence_embedding = SentenceEmbedding(
             self.max_seq_length,
             self.d_model,
@@ -59,11 +45,10 @@ class Decoder(nn.Module):
 
     def forward(self, x, y, cross_mask, self_mask, start_token=True, end_token=False):
         # x: 64, 300, 512
-        # y: (64, )
+        # y: (64, 300)
         # cross_mask: 64, 1, 300, 300
         # self_mask: 64, 1, 300, 300
 
-        y = self.batch_tokenizer(y, start_token, end_token)  # 64, 300
         y = self.sentence_embedding(y)  # 64, 300, 512
         # Sequential layer takes only one input, hence to use x, y and masks, we need to iterate
         for layer in self.layers:
@@ -240,8 +225,8 @@ if __name__ == "__main__":
     from config.data_dictionary import (
         START_TOKEN,
         END_TOKEN,
-        PADDING_TOKEN,
         UNKNOWN_TOKEN,
+        PADDING_TOKEN,
     )
 
     fp = ROOT / Path("result/preprocessor.pkl")
@@ -256,7 +241,7 @@ if __name__ == "__main__":
         Decoder_Enum.d_model.value,
     )  # Src sentence embedding with positional encoding
 
-    y = [
+    y_batch_sentences = [
         "പൂച്ച ഉറങ്ങുകയാണ്.",
         "അവൾ പുസ്തകങ്ങൾ വായിക്കാൻ ഇഷ്ടപ്പെടുന്നു.",
         "അവൻ എല്ലാ ഞായറാഴ്ചയും ഫുട്ബോൾ കളിക്കുന്നു.",
@@ -323,6 +308,19 @@ if __name__ == "__main__":
         "അവൻ ഒരു വയോധികനെ റോഡ് കടക്കാൻ സഹായിച്ചു.",
     ]
 
+    tgt_batch_tokenizer = BatchTokenizer(
+        HuggingFaceData.max_length.value,
+        preprocessor.ml_vocab_to_index,
+        START_TOKEN,
+        END_TOKEN,
+        PADDING_TOKEN,
+        UNKNOWN_TOKEN,
+    )
+
+    y = tgt_batch_tokenizer(
+        y_batch_sentences, start_token=True, end_token=False
+    )  # (64, 300)
+
     cross_mask = torch.ones(
         Train.batch_size.value,
         1,
@@ -348,10 +346,7 @@ if __name__ == "__main__":
         drop_prob=Decoder_Enum.drop_prob.value,
         max_seq_length=HuggingFaceData.max_length.value,
         vocab_to_index=preprocessor.ml_vocab_to_index,
-        START_TOKEN=START_TOKEN,
-        END_TOKEN=END_TOKEN,
         PADDING_TOKEN=PADDING_TOKEN,
-        UNKNOWN_TOKEN=UNKNOWN_TOKEN,
     )
     out = decoder(x, y, cross_mask, self_mask, start_token=True, end_token=False)
     print(out.shape)

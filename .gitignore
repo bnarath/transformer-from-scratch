@@ -1,6 +1,7 @@
 # Custom
 data/
 result/
+_data_dictionary.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

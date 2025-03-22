@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+import fsspec
 
 from src.preprocess import Preprocessor, BatchTokenizer
 from src.torch_transformer import Transformer
@@ -14,6 +15,7 @@ from config.data_dictionary import (
     Decoder_Enum,
 )
 from torch.utils.data import DataLoader, Dataset
+from utils.utils import get_checkpoint_path, get_log_dir
 from config.data_dictionary import (
     START_TOKEN,
     END_TOKEN,
@@ -21,6 +23,9 @@ from config.data_dictionary import (
     UNKNOWN_TOKEN,
     NEG_INFINITY,
 )
+
+# from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 from pathlib import Path
 import os
 import pickle
@@ -40,12 +45,14 @@ class PyTorch_Letter_By_Letter_Translation:
     ):
         self.framework = "pytorch"
         self.type = "letter_by_letter"
-        self.checkpoint_dir = ROOT / Path(Train.checkpoint_dir.value)
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self.checkpoint_path = self.checkpoint_dir / "checkpoint.pth"
+        self.checkpoint_path = get_checkpoint_path()
+        self.log_dir = get_log_dir()
+        self.writer = SummaryWriter(log_dir=self.log_dir)
         self.device = (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
+        self.device_count = torch.cuda.device_count()
+
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.num_epochs = num_epochs
@@ -98,11 +105,20 @@ class PyTorch_Letter_By_Letter_Translation:
             max_seq_length=self.max_seq_length,
             src_vocab_to_index=self.eng_vocab_to_index,
             tgt_vocab_to_index=self.ml_vocab_to_index,
-            START_TOKEN=self.START_TOKEN,
-            END_TOKEN=self.END_TOKEN,
             PADDING_TOKEN=self.PADDING_TOKEN,
-            UNKNOWN_TOKEN=self.UNKNOWN_TOKEN,
-        ).to(device=self.device)
+        )
+
+        # 🚀 Enable multi-GPU if available
+        # DataParallel splits each batch across GPUs automatically.
+        # Weights are shared (same weights)
+        # Fwd pass and backward separately and gradients are taken as the avg
+        # Weights are updated (shared) and repeat the process
+        # Eval is not distributed
+        if self.device_count > 1:
+            logging.info(f"Using {self.device_count} GPUs for training!")
+            self.transformer = torch.nn.DataParallel(self.transformer)
+
+        self.transformer.to(device=self.device)
 
         self.loss = nn.CrossEntropyLoss(
             ignore_index=self.ml_vocab_to_index[self.PADDING_TOKEN], reduction="none"
@@ -126,6 +142,30 @@ class PyTorch_Letter_By_Letter_Translation:
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
+    def log_model_graph_to_tensorboard(self):
+        # dummy inputs are just dummy, shape should be correct
+        dummy_src = torch.randint(0, 100, (1, self.max_seq_length)).to(self.device)
+        dummy_tgt = torch.randint(0, 100, (1, self.max_seq_length)).to(self.device)
+        encoder_self_attention_mask = torch.ones(
+            (1, 1, self.max_seq_length, self.max_seq_length)
+        ).to(self.device)
+        decoder_cross_attention_mask = torch.ones(
+            (1, 1, self.max_seq_length, self.max_seq_length)
+        ).to(self.device)
+        decoder_self_attention_mask = torch.ones(
+            (1, 1, self.max_seq_length, self.max_seq_length)
+        ).to(self.device)
+        self.writer.add_graph(
+            self.transformer,
+            (
+                dummy_src,
+                dummy_tgt,
+                encoder_self_attention_mask,
+                decoder_cross_attention_mask,
+                decoder_self_attention_mask,
+            ),
+        )
+
     def build(self):
         # logging.info(self.transformer)
         # logging.info(list(self.transformer.parameters()))
@@ -134,9 +174,22 @@ class PyTorch_Letter_By_Letter_Translation:
 
         start_epoch = 0
         best_loss = float("inf")
-        # Load checkpoint if it exists
-        if self.checkpoint_path.exists():
-            checkpoint = torch.load(self.checkpoint_path)
+        checkpoint_path = str(self.checkpoint_path)
+        check_point_path_exists = False
+        if checkpoint_path.startswith("gs://"):
+            # Use fsspec for (GCS)
+            fs = fsspec.filesystem("gcs")
+            if fs.exists(checkpoint_path):
+                with fs.open(checkpoint_path, "rb") as f:
+                    checkpoint = torch.load(f, map_location=self.device)
+                    check_point_path_exists = True
+
+        else:
+            # Local filesystem
+            if os.path.exists(checkpoint_path):
+                checkpoint = torch.load(self.checkpoint_path, map_location=self.device)
+                check_point_path_exists = True
+        if check_point_path_exists:
             self.transformer.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             start_epoch = checkpoint["epoch"] + 1
@@ -154,21 +207,25 @@ class PyTorch_Letter_By_Letter_Translation:
 
                 src_tokenized = self.src_batch_tokenizer(
                     src, start_token=False, end_token=False
+                ).to(
+                    self.device
                 )  # (64, 300)
+
                 tgt_tokenized = self.tgt_batch_tokenizer(
                     tgt, start_token=True, end_token=False
+                ).to(
+                    self.device
                 )  # (64, 300)
-                batch_tokenized = (
-                    src_tokenized,
-                    tgt_tokenized,
-                )  # [(64, 300), (64, 300)]
 
                 (
                     encoder_self_attention_mask,
                     decoder_self_attention_mask,
                     decoder_cross_attention_mask,
                 ) = self.create_masks(
-                    batch_tokenized,
+                    (
+                        src_tokenized,
+                        tgt_tokenized,
+                    ),  # [(64, 300), (64, 300)],
                     self.max_seq_length,
                     self.eng_vocab_to_index[self.PADDING_TOKEN],
                     self.ml_vocab_to_index[self.PADDING_TOKEN],
@@ -176,8 +233,8 @@ class PyTorch_Letter_By_Letter_Translation:
 
                 self.optimizer.zero_grad()  # resets gradient
                 logits = self.transformer(
-                    src,
-                    tgt,
+                    src_tokenized,
+                    tgt_tokenized,
                     encoder_self_attention_mask.to(self.device),
                     decoder_cross_attention_mask.to(self.device),
                     decoder_self_attention_mask.to(self.device),
@@ -201,7 +258,15 @@ class PyTorch_Letter_By_Letter_Translation:
 
                 if batch_idx % 1000 == 0:
                     logging.info(f"Testing @ epoch = {epoch}, batch = {batch_idx}")
-                    self.test()
+                    self.test(epoch)
+
+                    # To log the loss
+                    self.writer.add_scalar(
+                        "Loss/Train",
+                        loss.item(),
+                        epoch * len(self.train_dataloader) + batch_idx,
+                    )
+
             #     break
             avg_epoch_loss = epoch_loss / len(self.train_dataloader)
             logging.info(f"Average training loss @epoch {epoch} is {avg_epoch_loss}")
@@ -209,6 +274,20 @@ class PyTorch_Letter_By_Letter_Translation:
             logging.info(
                 f"Average validation loss @epoch {epoch} is {avg_validation_loss}"
             )
+
+            # Log average loss for the epoch
+            self.writer.add_scalar("Loss/Train_avg", avg_epoch_loss, epoch)
+            self.writer.add_scalar("Loss/Test_avg", avg_validation_loss, epoch)
+
+            # log param weights and grads
+            for name, param in self.transformer.named_parameters():
+                self.writer.add_histogram(
+                    f"Params/{name}", param, epoch
+                )  # Log parameter histograms
+                if param.grad is not None:
+                    self.writer.add_histogram(
+                        f"Grads/{name}", param.grad, epoch
+                    )  # Log gradient histograms
 
             if avg_validation_loss < best_loss:
                 best_loss = avg_validation_loss
@@ -218,7 +297,12 @@ class PyTorch_Letter_By_Letter_Translation:
                     "optimizer_state_dict": self.optimizer.state_dict(),
                     "best_loss": best_loss,
                 }
-                torch.save(checkpoint, self.checkpoint_path)
+                checkpoint_path = str(self.checkpoint_path)
+                if checkpoint_path.startswith("gs://"):  # If path is a GCS URI
+                    with fsspec.open(checkpoint_path, "wb") as f:
+                        torch.save(checkpoint, f)
+                else:  # Local filesystem
+                    torch.save(checkpoint, checkpoint_path)
                 logging.info(
                     f"Checkpoint saved at epoch {epoch} with best validation loss {best_loss:.4f}"
                 )
@@ -232,6 +316,9 @@ class PyTorch_Letter_By_Letter_Translation:
         logging.info(
             f"Total Training Time to run {self.num_epochs-start_epoch} epochs:  {int(hours)}h {int(minutes)}m {int(seconds)}s"
         )
+
+        # Close the TensorBoard writer
+        self.writer.close()
 
     def get_input(self) -> Tuple[DataLoader]:
         """Torch dataset for training"""
@@ -345,7 +432,7 @@ class PyTorch_Letter_By_Letter_Translation:
             decoder_cross_attention_mask.unsqueeze(dim=1),
         )
 
-    def test(self):
+    def test(self, epoch):
         # Inference test on a specific english sentence
         self.transformer.eval()  # no dropout
 
@@ -356,12 +443,16 @@ class PyTorch_Letter_By_Letter_Translation:
 
             eg_english_tokenized = self.src_batch_tokenizer(
                 eg_english, start_token=False, end_token=False
+            ).to(
+                self.device
             )  # (1, 300)
 
             for i in range(self.max_seq_length - 1):  # To consider start token
 
                 eg_ml_tokenized = self.tgt_batch_tokenizer(
                     eg_ml, start_token=True, end_token=False
+                ).to(
+                    self.device
                 )  # (1, 300)
                 (
                     eg_encoder_self_attention_mask,
@@ -375,15 +466,11 @@ class PyTorch_Letter_By_Letter_Translation:
                 )
 
                 eg_logits = self.transformer(
-                    eg_english,
-                    eg_ml,
+                    eg_english_tokenized,
+                    eg_ml_tokenized,
                     eg_encoder_self_attention_mask.to(self.device),
                     eg_decoder_cross_attention_mask.to(self.device),
                     eg_decoder_self_attention_mask.to(self.device),
-                    enc_start_token=False,
-                    enc_end_token=False,
-                    dec_start_token=True,
-                    dec_end_token=False,
                 ).to(self.device)
 
                 next_token_logit_distribution = eg_logits[0][i]
@@ -398,6 +485,9 @@ class PyTorch_Letter_By_Letter_Translation:
                     break
             logging.info(f"{eg_english[0]} -> {eg_ml[0]}")
             logging.info("_________________________________________________________")
+            self.writer.add_text(
+                "Test Translation", f"Input: {eg_english[0]}\nOutput: {eg_ml[0]}", epoch
+            )
 
     def get_validation_loss(self):
         self.transformer.eval()  # Set model to evaluation mode
@@ -409,10 +499,13 @@ class PyTorch_Letter_By_Letter_Translation:
 
                 src_tokenized = self.src_batch_tokenizer(
                     src, start_token=False, end_token=False
-                )
+                ).to(self.device)
+                # (64, 300)
+
                 tgt_tokenized = self.tgt_batch_tokenizer(
                     tgt, start_token=True, end_token=False
-                )
+                ).to(self.device)
+                # (64, 300)
 
                 (
                     encoder_self_attention_mask,
@@ -426,8 +519,8 @@ class PyTorch_Letter_By_Letter_Translation:
                 )
 
                 logits = self.transformer(
-                    src,
-                    tgt,
+                    src_tokenized,
+                    tgt_tokenized,
                     encoder_self_attention_mask.to(self.device),
                     decoder_cross_attention_mask.to(self.device),
                     decoder_self_attention_mask.to(self.device),
