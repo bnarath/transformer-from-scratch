@@ -60,18 +60,14 @@ If you use this project or related methods, please cite the [original Transforme
 - **Positional Encoding:**
   - Positional encoding is added to the input embeddings to provide information about the position of tokens in the sequence. 
    
-  $$
-    \text{PE}(pos, 2i) = \sin\left( \frac{pos}{10000^{2i/d}} \right)
-  $$
+  $\text{PE}(pos, 2i) = \sin\left( \frac{pos}{10000^{2i/d}} \right)$
 
-  $$
-  \text{PE}(pos, 2i+1) = \cos\left( \frac{pos}{10000^{2i/d}} \right)
-  $$
+  $\text{PE}(pos, 2i+1) = \cos\left( \frac{pos}{10000^{2i/d}} \right)$
 
   Where:
-  - $ pos $ is the position of the token in the sequence (starting from 0).
-  - $ i $ is the index of the dimension (for each position in the encoding vector).
-  - $ d $ is the total dimensionality of the positional encoding (same as the embedding dimension = $ 512 $).
+  - $pos$ is the position of the token in the sequence (starting from 0).
+  - $i$ is the index of the dimension (for each position in the encoding vector).
+  - $d$ is the total dimensionality of the positional encoding (same as the embedding dimension = $512$).
 
 
 - **Multi-Head Attention:**
