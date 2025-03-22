@@ -55,7 +55,7 @@ If you use this project or related methods, please cite the [original Transforme
 ### Key Layers & Features used across Encoder and Decoder
 
 - **Embedding Layer:**
-  - The input tokens are converted into 512-dimensional vectors using an embedding layer with learnable weights. The embedding dimension is defined as $ d_{model} = 512 $.
+  - The input tokens are converted into 512-dimensional vectors using an embedding layer with learnable weights. The embedding dimension is defined as $d_{model} = 512$.
 
 - **Positional Encoding:**
   - Positional encoding is added to the input embeddings to provide information about the position of tokens in the sequence. 
