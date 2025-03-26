@@ -11,14 +11,15 @@ from typing import Literal, List, Dict
 
 
 class Preprocessor:
-    def __init__(self, type: Literal["letter_by_letter", "word_by_word"]):
+    def __init__(self, type: Literal["letter_by_letter", "BPE"]):
         self.type = type
-        self.vocab_type = "word" if self.type == "word_by_word" else "letter"
+        self.vocab_type = "word" if self.type == "BPE" else "letter"
 
-    def prepare_data(self):
+    def prepare_data_letter_by_letter(self):
         logging.info("1. Retrive data from hugging face")
         retriever = Retriever()
         logging.info(retriever.train_data)
+        logging.info(retriever.val_data)
         logging.info(retriever.test_data)
         logging.info("2. Retrieving vocabulary")
         create_vocab_ml = CreateVocabulary(language="ml", type=self.vocab_type)
@@ -47,6 +48,15 @@ class Preprocessor:
             to_print=False,
             type="train",
         )
+        self.eng_mal_valid_sentence_pairs_for_val = get_valid_sentence_pairs(
+            retriever.val_data,
+            create_vocab_eng.vocabulary,
+            create_vocab_ml.vocabulary,
+            max_seq_len=HuggingFaceData.max_length.value,
+            total=HuggingFaceData.max_val_size.value,
+            to_print=False,
+            type="val",
+        )
         self.eng_mal_valid_sentence_pairs_for_test = get_valid_sentence_pairs(
             retriever.test_data,
             create_vocab_eng.vocabulary,
@@ -58,6 +68,9 @@ class Preprocessor:
         )
         logging.info(
             f"Total valid sentence pairs in train data = {len(self.eng_mal_valid_sentence_pairs_for_train)}"
+        )
+        logging.info(
+            f"Total valid sentence pairs in val data = {len(self.eng_mal_valid_sentence_pairs_for_val)}"
         )
         logging.info(
             f"Total valid sentence pairs in test data = {len(self.eng_mal_valid_sentence_pairs_for_test)}"

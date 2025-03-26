@@ -16,7 +16,7 @@ def parse():
         dest="type",
         type=str,
         required=True,
-        choices=["letter_by_letter", "word_by_word"],
-        help="Choose the type: letter_by_letter or word_by_word",
+        choices=["letter_by_letter", "BPE"],
+        help="Choose the type: letter_by_letter or BPE",
     )
     return p.parse_args()

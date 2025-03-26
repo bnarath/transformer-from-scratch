@@ -20,13 +20,17 @@ class HuggingFaceData(Enum):
     split = "train"
     remove_feature = ["idx"]
     save_train_location = "data/english_malayalam_train.arrow"
+    save_val_location = "data/english_malayalam_val.arrow"
     save_test_location = "data/english_malayalam_test.arrow"
     src_column = "src"
     tgt_column = "tgt"
-    test_split_ratio = 0.2
+    train_ratio = 0.5
+    val_ratio = 0.25
+    test_ratio = 0.25
     max_length = 300  # After checking 99% percentile of sentence length
     seed = 1
     max_train_size = 1000000
+    max_val_size = 100000
     max_test_size = 100000
     preprocessor_file = "result/preprocessor.pkl"  # contains vocab, vocab <-> index map, valid eng, ml pairs
 

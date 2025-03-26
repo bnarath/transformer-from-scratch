@@ -1,11 +1,11 @@
-# Transformer-from-Scratch: English-to-Malayalam Machine Translation
+# Transformer-from-Scratch: English-to-Malayalam Machine Translation version 1
 
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-312/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=flat&logo=PyTorch&logoColor=white)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dataset](https://img.shields.io/badge/Dataset-ai4bharat%2Fsamanantar-blue)](https://huggingface.co/datasets/ai4bharat/samanantar)
 
-**Executive Summary:** This project implements the Transformer architecture from scratch to address the challenge of English-to-Malayalam (an Indic language) machine translation. It demonstrates a strong understanding of the Transformer's key components and showcases the development of end-to-end neural machine translation (NMT) systems using PyTorch. The project explores both subword-level and character-level translation techniques, utilizing advanced tokenization methods. It also highlights the ability to design novel architectures in PyTorch, optimize model training on GPUs, and rigorously evaluate performance on large datasets. Malayalam was chosen for this project as it is my native language.
+**Executive Summary:** This project implements the Transformer architecture from scratch to address the challenge of English-to-Malayalam (an Indic language) machine translation. It demonstrates a strong understanding of the Transformer's key components and showcases the development of end-to-end neural machine translation (NMT) systems using PyTorch. The project explores character-level translation (a version 2 will be coming up soon with BPETokenizer). It also highlights the ability to design novel architectures in PyTorch, optimize model training on GPUs. Malayalam was chosen for this project as it is my native language.
 
 
 ## Project Goals
@@ -162,10 +162,7 @@ If you use this project or related methods, please cite the [original Transforme
   
 
 ## Implementation Details
-
-The implementation is in PyTorch with two approaches:
-- **Letter-by-letter translation** <span style="color:green;">[Completed]</span>
-- **Word-by-word translation** <span style="color:orange;">[Work In Progress]</span>
+![implemenation pipeline](fig/implementation.png)
 
 
 ## To Run:

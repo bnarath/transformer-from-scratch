@@ -36,7 +36,7 @@ from typing import Tuple, List, Dict
 torch.manual_seed(Train.seed.value)
 
 
-class PyTorch_Letter_By_Letter_Translation:
+class Translator:
     def __init__(
         self,
         learning_rate=Train.learning_rate.value,
@@ -74,10 +74,9 @@ class PyTorch_Letter_By_Letter_Translation:
         self.ml_index_to_vocab = None
         self.eng_vocab_to_index = None
         self.eng_index_to_vocab = None
-        self.train_dataloader, self.test_dataloader = (
+        self.train_dataloader, self.val_dataloader, self.test_dataloader = (
             self.get_input()
         )  # Each batch is [[(64 src, 64 tgt)]]
-
         self.src_batch_tokenizer = BatchTokenizer(
             self.max_seq_length,
             self.eng_vocab_to_index,
@@ -164,6 +163,7 @@ class PyTorch_Letter_By_Letter_Translation:
                 decoder_cross_attention_mask,
                 decoder_self_attention_mask,
             ),
+            verbose=True,
         )
 
     def build(self):
@@ -332,7 +332,7 @@ class PyTorch_Letter_By_Letter_Translation:
                 preprocessor = pickle.load(f)
         else:
             preprocessor = Preprocessor(type=self.type)
-            preprocessor.prepare_data()
+            preprocessor.prepare_data_letter_by_letter()
             with open(preprocessor_path, "wb") as f:
                 pickle.dump(preprocessor, f)
 
@@ -344,21 +344,33 @@ class PyTorch_Letter_By_Letter_Translation:
         train_ds = TranslationDataset(
             src_trg_pairs=preprocessor.eng_mal_valid_sentence_pairs_for_train
         )
+        val_ds = TranslationDataset(
+            src_trg_pairs=preprocessor.eng_mal_valid_sentence_pairs_for_val
+        )
+
         test_ds = TranslationDataset(
             src_trg_pairs=preprocessor.eng_mal_valid_sentence_pairs_for_test
         )
+
         train_dataloader = DataLoader(
             train_ds, batch_size=Train.batch_size.value, shuffle=True, drop_last=True
         )
+
+        val_dataloader = DataLoader(
+            val_ds, batch_size=Train.batch_size.value, shuffle=True, drop_last=True
+        )
+
         test_dataloader = DataLoader(
             test_ds, batch_size=Train.batch_size.value, shuffle=True, drop_last=True
         )
         # n = 1
         # logging.info(f"First {n} batch from training DataLoader")
         # display_first_n_batch(train_dataloader, n)
+        # logging.info(f"First {n} batch from validation DataLoader")
+        # display_first_n_batch(val_dataloader, n)
         # logging.info(f"First {n} batch from testing DataLoader")
         # display_first_n_batch(test_dataloader, n)
-        return train_dataloader, test_dataloader
+        return train_dataloader, val_dataloader, test_dataloader
 
     def detockenize(
         self,
@@ -494,7 +506,7 @@ class PyTorch_Letter_By_Letter_Translation:
         total_loss = 0.0
 
         with torch.no_grad():  # Disable gradient computation for efficiency
-            for batch in self.test_dataloader:
+            for batch in self.val_dataloader:
                 src, tgt = batch
 
                 src_tokenized = self.src_batch_tokenizer(
@@ -543,7 +555,7 @@ class PyTorch_Letter_By_Letter_Translation:
                 total_loss += loss.item()
 
         return total_loss / len(
-            self.test_dataloader
+            self.val_dataloader
         )  # Return average validation loss (avg loss per word)
 
 
@@ -561,5 +573,5 @@ class TranslationDataset(Dataset):
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)
-    translator = PyTorch_Letter_By_Letter_Translation()
+    translator = Translator()
     translator.build()
