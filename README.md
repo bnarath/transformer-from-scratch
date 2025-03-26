@@ -28,10 +28,6 @@
 
 *   **Dataset:** The `ai4bharat/samanantar` dataset from HuggingFace was used, containing approximately 5 million English-Malayalam sentence pairs. This dataset consists of English-to-Indic language pairs, specifically designed for machine translation tasks. For resource efficiency, I’ve limited the dataset to approximately 1 million pairs for training and 100K for validation to reduce  the training cost. (if you have resources, better use the entire data)
 
-*   **Tokenization:**
-    <span style="color:orange;">[TBD]</span>
-
-
 ## 2. Transformer Architecture
 This section explains the components of the Transformer architecture used for this project.
 
