@@ -114,7 +114,7 @@ If you use this project or related methods, please cite the [original Transforme
     $\hat{x_i} = \frac{x_i - \mu}{\sqrt{\sigma^2 + \epsilon}}$
     Where $\epsilon$  is a small constant added for numerical stability.
 
-  3. **Scale and shift** the normalized output using learnable parameters $ \gamma $(scale)$ and $\beta$ (shift):
+  3. **Scale and shift** the normalized output using learnable parameters $\gamma$ (scale) and $\beta$ (shift):
     $y_i = \gamma \hat{x_i} + \beta$
 
 
