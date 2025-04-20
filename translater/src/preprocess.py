@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-from data.retrieve import Retriever
-from data.create_vocabulary import CreateVocabulary
+from retrieval.retrieve import Retriever
+from retrieval.create_vocabulary import CreateVocabulary
 from utils.parser import parse
-from data.preprocess import get_valid_sentence_pairs
+from retrieval.preprocess import get_valid_sentence_pairs
 
 from config.data_dictionary import ROOT, Train, HuggingFaceData
 import logging
